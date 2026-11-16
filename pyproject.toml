@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nba-predictor"
+version = "2.0.0"
+description = "Calibrated pre-game NBA win probabilities with Elo, Four Factors, SHAP, a season simulator and an LLM analyst."
+requires-python = ">=3.11"
+dependencies = [
+    "numpy",
+    "pandas>=2.2",
+    "scikit-learn>=1.5",
+    "xgboost>=2.1",
+    "joblib",
+    "nba_api>=1.5",
+    "pydantic>=2.6",
+    "python-dotenv",
+    "plotly>=5.20",
+    "streamlit>=1.40",
+]
+
+[project.optional-dependencies]
+llm = ["anthropic>=0.40"]
+dev = ["pytest>=8"]
+
+[project.scripts]
+nba-predictor = "nba_predictor.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q"
+filterwarnings = ["ignore::FutureWarning"]
