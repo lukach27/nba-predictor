@@ -1,0 +1,25 @@
+# Virtual environments
+venv/
+.venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+
+# Secrets (never commit API keys)
+.env
+.streamlit/secrets.toml
+
+# Regenerable outputs
+data/processed/
+logs/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
