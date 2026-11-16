@@ -452,6 +452,18 @@ def _edge(facts: dict[str, Any], stat: str) -> float | None:
     return (h - a) / spread * (1.0 if higher_is_better else -1.0)
 
 
+def standardised_edges(facts: dict[str, Any]) -> list[dict[str, Any]]:
+    """Home-minus-away edge on each comparable statistic, in units of the typical gap between
+    two teams (positive = the home team is better). Used by the dashboard's comparison chart."""
+    rows = []
+    for _, stat, noun in ADVANTAGE_STATS:
+        edge = _edge(facts, stat)
+        if edge is not None:
+            rows.append({"stat": stat, "label": _SPEC[stat][1], "noun": noun, "home": facts["metrics"][f"home.{stat}"],
+                         "away": facts["metrics"][f"away.{stat}"], "edge": round(edge, 3)})
+    return rows
+
+
 def _unit(stat: str) -> str:
     """Display unit: percentages get a % sign; free-throw rates are a ratio (makes per 100 attempts)."""
     return "%" if _SPEC[stat][3] == 100 and stat not in ("ft_rate", "opp_ft_rate") else ""
