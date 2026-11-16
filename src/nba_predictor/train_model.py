@@ -441,7 +441,7 @@ def train(games: pd.DataFrame | None = None, *, tcfg: TrainingConfig | None = No
             "training_rows": int(len(everything)), "last_training_date": str(everything["game_date"].max().date()),
             "mean_mov_multiplier": features.elo.mean_multiplier,
             "margin_residual_std": margin_report.get("residual_std"),
-            "uses_team_extras": team_extras is not None,
+            "uses_team_extras": any(c.startswith("roster_") for c in columns),
         }
     )
     metrics = _jsonable(metrics)

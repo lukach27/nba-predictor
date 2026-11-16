@@ -17,22 +17,30 @@ The model was then frozen and scored **once** on seasons it had never seen: 2025
 
 | Model | Accuracy | Log loss | Brier | ROC-AUC | Calibration error |
 |---|---|---|---|---|---|
-| **Ensemble (calibrated)** | 68.6% | **0.5959** | **0.2046** | 0.741 | 2.6 pts |
-| XGBoost alone | 68.1% | 0.5988 | 0.2059 | 0.738 | 3.1 pts |
+| **Ensemble (calibrated)** | 68.5% | **0.5940** | **0.2038** | 0.743 | 3.2 pts |
+| XGBoost alone | 68.7% | 0.5968 | 0.2050 | 0.741 | 4.0 pts |
 | Elo only (improved, tuned) | 68.6% | 0.5975 | 0.2053 | 0.742 | 3.1 pts |
 | Original project's Elo | 67.6% | 0.6104 | 0.2109 | 0.722 | 2.5 pts |
 | Always the home-win rate | 55.0% | 0.6887 | 0.2478 | 0.500 | 1.6 pts |
 
-Accuracy has a 95% interval of roughly ±2.4 points on this sample (ensemble: 66.1-71.0%).
+Accuracy has a 95% interval of roughly ±2.4 points on this sample (ensemble: 66.1-70.9%), so
+the accuracy column cannot rank these models. Log loss and Brier score can, a little.
 
 What these numbers do and do not show:
 
 - **The improved Elo is the real gain.** Against the original Elo (K=20, nothing else) it
   lowers log loss by 0.013, and the 95% paired-bootstrap interval (0.007 to 0.018) excludes zero.
 - **The extra features add a small edge on top of Elo.** In walk-forward validation
-  (6,966 games) the ensemble beats pure Elo by 0.0047 log loss, interval 0.0021 to 0.0070.
-  On the hold-out the difference is 0.0016 with an interval of -0.0080 to +0.0046, which is
-  not statistically distinguishable at this sample size.
+  (6,966 games) the ensemble beats pure Elo by 0.0069 log loss, interval 0.0039 to 0.0097.
+  On the hold-out the difference is 0.0035 with an interval of -0.0033 to +0.0103: the same
+  direction, but not statistically distinguishable at this sample size.
+- **The roster-availability proxy is the most useful addition.** It measures how much of a
+  team's recent rotation actually played in its last three games (from player game logs).
+  Removing it makes validation log loss worse by 0.0018 (interval 0.0001 to 0.0036), and the
+  hold-out log loss is 0.5940 with it against 0.5959 without.
+- **Calibration error is about 3 points for every Elo-based model.** Calibration slopes on the
+  hold-out are above 1 (ensemble 1.08), meaning forecasts were slightly too cautious in these
+  two lopsided seasons.
 - **XGBoost does not beat logistic regression here.** The ensemble weight chosen by validation
   is 0% XGBoost, so the deployed ensemble equals the calibrated logistic regression. Both models
   are still trained, compared and shown; their disagreement feeds the uncertainty indicators.
@@ -40,7 +48,7 @@ What these numbers do and do not show:
   2025-26 season was more lopsided, not because the model improved. Compare models on the same
   games, not across seasons.
 - **Point margin model** (XGBoost regression, same features): mean absolute error 11.4 points
-  on the hold-out, the same as a one-variable Elo regression.
+  on the hold-out, practically the same as a one-variable Elo regression (11.45).
 
 Without injury, lineup or betting-market data, team-level models top out around 65-69%.
 
@@ -54,10 +62,10 @@ python -m venv .venv
 pip install -r requirements.txt
 pip install -e .
 
-python -m nba_predictor fetch      # downloads 2014-15 to today (about 1 minute)
-python -m nba_predictor train      # full training and evaluation protocol (about 2 minutes)
-streamlit run app/main.py          # dashboard at http://localhost:8501
-python -m pytest                   # 88 tests
+python -m nba_predictor fetch --players   # games, schedule, player logs: 2014-15 to today (about 2 minutes)
+python -m nba_predictor train             # full training and evaluation protocol (about 3 minutes)
+streamlit run app/main.py                 # dashboard at http://localhost:8501
+python -m pytest                          # 94 tests
 ```
 
 The repository already contains downloaded data (`data/raw/`) and a trained model (`models/`),
@@ -67,8 +75,8 @@ so the dashboard and the tests work right after installation.
 
 | Command | What it does |
 |---|---|
-| `python -m nba_predictor fetch [--full]` | Download game logs and the current schedule from the NBA stats API |
-| `python -m nba_predictor train` | Tune Elo, select features, tune models, calibrate, evaluate, save artefacts |
+| `python -m nba_predictor fetch [--full] [--players]` | Download game logs and the current schedule from the NBA stats API. `--players` also downloads player game logs; once that file exists it is refreshed automatically. |
+| `python -m nba_predictor train [--no-roster]` | Tune Elo, select features, tune models, calibrate, evaluate, save artefacts. The roster group is offered to the ablation whenever player logs exist. |
 | `python -m nba_predictor update` | Daily routine: fetch, rebuild features, log forecasts for the next two days, grade old ones |
 | `python -m nba_predictor upcoming --days 3` | Forecasts for scheduled games |
 | `python -m nba_predictor predict BOS LAL [--date YYYY-MM-DD] [--neutral] [--json]` | One matchup (home team first) |
@@ -120,6 +128,7 @@ NBA stats API ──> data/raw/games_raw.csv, schedule.csv          data_collect
 | `box_metrics.py` | Single-game Four Factors and possession-based ratings |
 | `elo.py` | Elo engine and parameter grid search |
 | `features.py` | The one feature pipeline (team history, rest, head-to-head, matchup differences) |
+| `roster.py` | Player game logs and the roster-availability proxy (optional feature group) |
 | `metrics.py` | Accuracy, log loss, Brier, ROC-AUC, ECE, calibration tables, bootstrap intervals |
 | `modeling.py` | Model definitions, Platt calibration, walk-forward folds, `ModelBundle` save/load |
 | `train_model.py` | The training and evaluation protocol |
@@ -140,6 +149,7 @@ NBA stats API ──> data/raw/games_raw.csv, schedule.csv          data_collect
 |---|---|---|
 | `data/raw/games_raw.csv` | One row per team per game, 2014-15 onward, all game types. Same 28 columns as the original project (`SEASON_ID, TEAM_ID, ..., PLUS_MINUS`). | `LeagueGameFinder` |
 | `data/raw/schedule.csv` | Current season schedule: date, tip-off time (UTC), teams, status, neutral-site flag | `ScheduleLeagueV2` |
+| `data/raw/player_logs.csv` | Minutes per player per regular-season game (season, player id, team id, game id, date, minutes). No names are stored. | `PlayerGameLogs` |
 | `data/processed/*.csv` | Regenerated feature tables (git-ignored) | `features.py` |
 | `data/predictions/ledger.csv` | Forecasts logged before tip-off | `ledger.py` |
 | `models/` | Model bundle, metrics, backtest predictions | `train_model.py` |
@@ -164,9 +174,10 @@ updates them.
 | `venue` | Home team's home-game form against the away team's road form | yes |
 | `rest` | Rest days per team, rest gap, back-to-back flags | yes (the only group significant on its own) |
 | `h2h` | Shrunk average margin of recent meetings (sign flips with home court) | yes (marginal) |
+| `schedule` | Games in the last 7 days, third game in four nights, road-trip length | yes (marginal) |
+| `roster` | Share of the recent rotation, minutes-weighted, that played in the last 3 games: per team and the gap | yes (significant) |
 | `efficiency` | Net rating, offensive rating, blended win % | no |
 | `four_factors` | eFG%, TOV%, ORB%, FT rate, and their defensive mirrors | no |
-| `schedule` | Games in the last 7 days, third game in four nights, road-trip length | no |
 | `context` | Trailing league home win rate, season progress | no (it made validation worse) |
 
 "No" means removing the group did not make walk-forward log loss worse, so it was dropped:
@@ -178,8 +189,12 @@ dashboard and given to the analyst.
 (`FGA + 0.44 x FTA - OREB + TOV`, averaged over both teams), pace and offensive/defensive/net
 rating are estimates and are labelled as such everywhere.
 
+**Roster availability** is a proxy, not an injury report: it only knows who played in earlier
+games. It cannot know that a player returns tonight or was ruled out this morning.
+
 **Tuned Elo:** K = 16, home court = 60 points, 60% of the distance from 1500 carried between
-seasons, FiveThirtyEight margin-of-victory multiplier, playoffs included.
+seasons, FiveThirtyEight margin-of-victory multiplier, playoffs included. The final model has
+20 inputs; logistic regression uses C = 0.01.
 
 ## Training and evaluation protocol
 
@@ -234,20 +249,22 @@ by the prompt only.
 
 ## Tests
 
-`python -m pytest` runs 88 tests in about 25 seconds, offline, on a synthetic league plus the
+`python -m pytest` runs 94 tests in about 40 seconds, offline, on a synthetic league plus the
 real artefacts when present. They cover: Four Factors and rating formulas; Elo (expected score,
 zero-sum updates, home court, margin, season regression); temporal shifts; **no future
 leakage** (changing a game's result must not change that game's or any earlier game's
 features); **training/inference parity** (a played game rebuilt as an unplayed fixture gets
-identical inputs, on synthetic and real data); missing data; walk-forward splits; calibration;
+identical inputs, on synthetic and real data, roster values included); missing data; walk-forward splits; calibration;
 model serialisation; SHAP additivity; simulator invariants and reproducibility; LLM schema,
 grounding and failure handling; the ledger; data cleaning.
 
 ## Limitations
 
-- No injuries, lineups, trades, rest decisions or betting lines. This is the largest source of
-  error and the reason the what-if adjustment exists.
-- The hold-out is 1,421 games, so differences below roughly 0.006 log loss cannot be confirmed.
+- No injury reports, lineups, trades, rest decisions or betting lines. The roster-availability
+  proxy only sees who played in past games. This is the largest source of error and the reason
+  the what-if adjustment exists.
+- The hold-out is 1,421 games, so differences below roughly 0.007 log loss cannot be confirmed.
+  The model's edge over a well-tuned Elo is real in validation but small.
 - XGBoost adds nothing over logistic regression on these features.
 - The margin model is no better than a linear Elo fit.
 - Playoff simulation uses regular-season probabilities and simplified tie-breaks.

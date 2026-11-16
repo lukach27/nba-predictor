@@ -32,7 +32,12 @@ def _predictor():
 def cmd_fetch(args: argparse.Namespace) -> int:
     from .data_collection import update_data
 
-    print(json.dumps(update_data(full=args.full), indent=2))
+    status = update_data(full=args.full)
+    if args.players or config.PLAYER_LOGS_PATH.exists():
+        from .roster import refresh_player_logs
+
+        status["player_log_rows"] = int(len(refresh_player_logs(full=args.full)))
+    print(json.dumps(status, indent=2))
     return 0
 
 
@@ -50,10 +55,10 @@ def cmd_train(args: argparse.Namespace) -> int:
     from .train_model import summarize, train
 
     extras = None
-    if args.roster:
+    if not args.no_roster and config.PLAYER_LOGS_PATH.exists():
         from .roster import load_team_extras
 
-        extras = load_team_extras()
+        extras = load_team_extras()  # offered to the ablation; kept only if it helps
     result = train(team_extras=extras)
     print(summarize(result.metrics))
     return 0
@@ -118,6 +123,10 @@ def cmd_update(args: argparse.Namespace) -> int:
     from .ledger import grade_ledger, ledger_metrics, load_ledger, record_predictions
 
     status = update_data()
+    if config.PLAYER_LOGS_PATH.exists():
+        from .roster import refresh_player_logs
+
+        refresh_player_logs()
     predictor = _predictor()
     save_processed(predictor.features)
     upcoming = predictor.upcoming(days=3)
@@ -134,12 +143,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("fetch", help="download games and schedule from the NBA API")
     p.add_argument("--full", action="store_true", help="re-download every season")
+    p.add_argument("--players", action="store_true", help="also download player game logs (roster-availability feature)")
     p.set_defaults(func=cmd_fetch)
 
     sub.add_parser("features", help="rebuild data/processed with the trained model's settings").set_defaults(func=cmd_features)
 
     p = sub.add_parser("train", help="run the full training and evaluation protocol")
-    p.add_argument("--roster", action="store_true", help="include the roster-availability features (needs player logs)")
+    p.add_argument("--no-roster", action="store_true",
+                   help="ignore player logs (by default the roster-availability group is offered when they exist)")
     p.set_defaults(func=cmd_train)
 
     p = sub.add_parser("upcoming", help="forecast scheduled games")

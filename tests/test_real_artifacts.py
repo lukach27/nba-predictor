@@ -33,14 +33,20 @@ def test_saved_model_loads_and_scores_real_games(real_predictor):
     scored = real_predictor.score(recent)
     for column in ("p_ensemble", "p_lr", "p_xgb", "p_elo"):
         assert scored[column].between(0.01, 0.99).all(), column
-    assert recent[real_predictor.bundle.feature_columns].notna().all().all()
+    features = recent[real_predictor.bundle.feature_columns]
+    always_known = [c for c in features.columns if not c.startswith("roster_")]
+    assert features[always_known].notna().all().all()
+    # roster availability is legitimately unknown before a team's first game of a season
+    assert features.isna().mean().max() < 0.1
 
 
 def test_training_inference_parity_on_real_data(real_predictor):
     """A real played game, rebuilt as an unplayed fixture from earlier history only, gets identical inputs."""
     from nba_predictor.features import build_features
+    from nba_predictor.roster import compute_roster_availability, load_player_logs
 
     bundle, games = real_predictor.bundle, real_predictor.games
+    logs = load_player_logs() if bundle.metadata.get("uses_team_extras") else None
     matchups = real_predictor.features.matchups
     played = matchups[matchups["is_played"] & (matchups["game_type"] == "regular") & ~matchups["is_neutral"]]
     for game in (played.iloc[-1], played.iloc[-200]):
@@ -48,7 +54,9 @@ def test_training_inference_parity_on_real_data(real_predictor):
         fixture = pd.DataFrame([{"game_id": game["game_id"], "game_date": game["game_date"], "season": game["season"],
                                  "game_type": "regular", "home_team_id": game["home_team_id"],
                                  "away_team_id": game["away_team_id"], "is_neutral": False}])
-        rebuilt = build_features(history, fixture, elo_params=bundle.elo_params, cfg=bundle.feature_config).matchups
+        extras = None if logs is None else compute_roster_availability(logs, history, bundle.feature_config)
+        rebuilt = build_features(history, fixture, elo_params=bundle.elo_params, cfg=bundle.feature_config,
+                                 team_extras=extras).matchups
         row = rebuilt[rebuilt["game_id"] == game["game_id"]].iloc[0]
         np.testing.assert_allclose(row[bundle.feature_columns].to_numpy(dtype=float),
                                    game[bundle.feature_columns].to_numpy(dtype=float), rtol=1e-9, atol=1e-9)

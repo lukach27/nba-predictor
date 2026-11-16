@@ -85,7 +85,8 @@ class FeatureConfig:
     league_hca_window_days: int = 365
     league_hca_min_games: int = 200
     roster_top_n: int = 8  # rotation size for the roster-availability proxy
-    roster_recent_games: int = 3
+    roster_recent_games: int = 3  # "recently available" = played in the last N team games
+    roster_halflife: float = 10.0  # team games; how quickly rotation weights follow minutes
 
 
 #: Model inputs, grouped for ablation. Every name is a pre-game quantity built in ``features.py``.

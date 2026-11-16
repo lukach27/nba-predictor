@@ -55,7 +55,7 @@ DATA_LIMITATIONS: list[str] = [
 Category = Literal[
     "overall_strength", "efficiency", "shooting", "ball_security", "offensive_rebounding", "free_throws",
     "shot_defense", "forcing_turnovers", "defensive_rebounding", "foul_discipline", "recent_form", "rest",
-    "venue", "pace", "head_to_head",
+    "venue", "pace", "head_to_head", "availability",
 ]
 
 # stat, label, source, scale, decimals, higher_is_better, typical spread between teams (display units)
@@ -81,6 +81,8 @@ METRIC_SPECS: list[tuple[str, str, str, float, int, bool | None, float]] = [
     ("rest_days", "Days since the previous game (capped at 7)", "observed", 1, 0, True, 1.0),
     ("games_last_7d", "Games played in the previous 7 days", "observed", 1, 0, False, 0.6),
     ("games_played", "Games played this season", "observed", 1, 0, None, 1.0),
+    ("roster_avail", "Rotation availability: share of the recent rotation (minutes-weighted) that played in the last 3 games (%)",
+     "observed", 100, 0, True, 9.0),
 ]
 _SPEC = {s[0]: s for s in METRIC_SPECS}
 #: (category, stat, noun phrase) used by the rule-based analyst to rank edges.
@@ -96,6 +98,7 @@ ADVANTAGE_STATS: list[tuple[str, str, str]] = [
     ("defensive_rebounding", "drb_pct", "defensive rebound rate"),
     ("foul_discipline", "opp_ft_rate", "opponent free-throw rate allowed (makes per 100 shot attempts)"),
     ("recent_form", "net_rtg_short", "recent-form net rating"),
+    ("availability", "roster_avail", "rotation availability over the last 3 games"),
 ]
 _INTERPRETATION: dict[str, str] = {
     "overall_strength": "The rating gap reflects sustained results over many games, the single strongest signal in the model.",
@@ -109,6 +112,7 @@ _INTERPRETATION: dict[str, str] = {
     "defensive_rebounding": "Finishing defensive possessions with the rebound denies second chances.",
     "foul_discipline": "Keeping the opponent off the line removes their most efficient scoring source.",
     "recent_form": "Recent results suggest a team playing above or below its season baseline.",
+    "availability": "A lower figure means regular rotation players have recently been absent; the data cannot say who plays in this game.",
 }
 
 

@@ -32,6 +32,12 @@ def _refresh() -> None:
     try:
         with st.spinner("Downloading games and schedule from the NBA API..."):
             update_data()
+            from nba_predictor import config as _config
+
+            if _config.PLAYER_LOGS_PATH.exists():
+                from nba_predictor.roster import refresh_player_logs
+
+                refresh_player_logs()
         st.cache_data.clear()
         st.cache_resource.clear()
         predictor = common.predictor()

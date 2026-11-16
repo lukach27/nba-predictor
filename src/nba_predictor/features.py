@@ -368,9 +368,20 @@ def build_features(games: pd.DataFrame, fixtures: pd.DataFrame | None = None, *,
     elo_then = rows.groupby(keys)["pre_elo"].shift(cfg.elo_trend_games)
     rows["pre_elo_trend"] = rows["pre_elo"] - elo_then.fillna(rows.groupby(keys)["pre_elo"].transform("first"))
     if team_extras is not None:
+        # Played games take the value recorded for that date; unplayed fixtures take the team's
+        # "next game" state (rows flagged is_next), provided it belongs to the same season.
+        # team_extras must be computed from the same ``games`` passed here, otherwise fixtures
+        # could see later information.
         extra_cols = [c for c in team_extras.columns if c.startswith("pre_")]
-        rows = rows.merge(team_extras[["team_id", "game_date"] + extra_cols], on=["team_id", "game_date"],
-                          how="left", validate="one_to_one")
+        is_next = team_extras["is_next"].astype(bool) if "is_next" in team_extras.columns else pd.Series(False, index=team_extras.index)
+        rows = rows.merge(team_extras.loc[~is_next, ["team_id", "game_date"] + extra_cols], on=["team_id", "game_date"],
+                          how="left", validate="many_to_one")
+        upcoming_state = team_extras[is_next].drop_duplicates("team_id").set_index("team_id")
+        pending = ~rows["is_played"].astype(bool)
+        if pending.any() and len(upcoming_state):
+            same_season = rows.loc[pending, "team_id"].map(upcoming_state["season"]).to_numpy() == rows.loc[pending, "season"].to_numpy()
+            for col in extra_cols:
+                rows.loc[pending, col] = np.where(same_season, rows.loc[pending, "team_id"].map(upcoming_state[col]).to_numpy(), np.nan)
 
     pre_cols = [c for c in rows.columns if c.startswith("pre_") and c != "pre_elo"]
     team_pre = rows[["team_id", "game_date"] + pre_cols]

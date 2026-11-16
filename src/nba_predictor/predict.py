@@ -33,7 +33,7 @@ FACT_STATS: list[str] = [
     "elo", "elo_trend", "win_pct", "net_rtg", "off_rtg", "def_rtg", "pace", "efg", "tov_pct", "orb_pct", "ft_rate",
     "opp_efg", "opp_tov_pct", "drb_pct", "opp_ft_rate", "fg3a_rate", "net_rtg_short", "win_pct_short",
     "net_rtg_home_split", "net_rtg_away_split", "win_pct_home_split", "win_pct_away_split", "rest_days", "b2b",
-    "three_in_four", "games_last_7d", "games_played", "away_streak", "home_streak",
+    "three_in_four", "games_last_7d", "games_played", "away_streak", "home_streak", "roster_avail",
 ]
 
 
@@ -311,8 +311,8 @@ class Predictor:
         rows = self._build(hypothetical_fixtures(pairs, date, self.current_season)).matchups
         rows = rows[~rows["is_played"]]
         snap = pd.DataFrame({"team_id": rows["home_team_id"].to_numpy()})
-        for stat in FACT_STATS:
-            snap[stat] = rows[f"home_{stat}"].to_numpy()
+        for stat in FACT_STATS:  # optional groups (e.g. roster) are absent without their data
+            snap[stat] = rows[f"home_{stat}"].to_numpy() if f"home_{stat}" in rows.columns else np.nan
         snap = snap.merge(self.teams, on="team_id")
         records = pd.DataFrame([{"team_id": int(t), **self.team_record(int(t))} for t in snap["team_id"]])
         return snap.merge(records, on="team_id").sort_values("elo", ascending=False).reset_index(drop=True)
