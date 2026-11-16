@@ -36,7 +36,7 @@ upset = (contenders if len(contenders) else slate)["volatility_score"].idxmax()
 graded = grade_ledger(load_ledger(), predictor.games)
 summary = ledger_metrics(graded) if len(graded) else None
 
-t1, t2, t3, t4 = st.columns(4)
+t1, t2, t3, t4 = st.container(key="tiles").columns(4)
 t1.metric("Game of the night", label(closest), f"{favourite[closest]} {common.pct(favourite_p[closest])} · closest call", delta_color="off", delta_arrow="off")
 t2.metric("Safest pick", f"{favourite[lock]} {common.pct(favourite_p[lock])}", label(lock), delta_color="off", delta_arrow="off")
 t3.metric("Upset watch", f"{underdog[upset]} {common.pct(1 - favourite_p[upset])}", f"{label(upset)} · volatility {slate.loc[upset, 'volatility_score']:.0f}/100",

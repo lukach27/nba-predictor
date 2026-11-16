@@ -67,6 +67,23 @@ CSS = """
 .bk-row.fav img { opacity: 1; }
 .bk-row:hover { background: rgba(255,255,255,.05); }
 .bk-title { text-align: center; color: #f0efec; font-weight: 600; margin: 6px 0; }
+.bk-lab { display: none; }
+@media (max-width: 760px) {
+  .bk-heads { display: none; }
+  .bk { flex-direction: column; min-width: 0; gap: 14px; }
+  .bk-col { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .bk-col.final { grid-template-columns: 1fr; }
+  .bk-lab { display: block; grid-column: 1 / -1; color: #c3c2b7; font-size: .75rem; text-transform: uppercase;
+    letter-spacing: .06em; font-weight: 600; margin-top: 4px; }
+  .gc-team img { width: 40px; height: 40px; }
+  /* headline tiles: two per row instead of one long column */
+  .st-key-tiles [data-testid="stHorizontalBlock"] { flex-wrap: wrap; gap: .6rem; }
+  .st-key-tiles [data-testid="stColumn"] { flex: 1 1 calc(50% - .6rem) !important; min-width: calc(50% - .6rem) !important; width: auto !important; }
+  .st-key-tiles [data-testid="stMetric"] { padding: 10px 12px; height: 100%; }
+  .st-key-tiles [data-testid="stMetricValue"] { font-size: 1.15rem; }
+  .st-key-tiles [data-testid="stMetricLabel"] p { font-size: .68rem; }
+  h1 { font-size: 1.6rem !important; }
+}
 .bk-trophy { text-align: center; font-size: 1.6rem; }
 </style>
 """
@@ -117,9 +134,11 @@ def game_cards(slate: pd.DataFrame, records: dict[str, str], key: str, selected:
                button: str = "Analyse", columns: int = 3) -> str | None:
     """Grid of game cards. Returns the game_id whose button was pressed in this run, if any."""
     clicked = None
-    cols = st.columns(columns)
+    cols: list = []
     for i, game in enumerate(slate.itertuples()):
         chosen = selected is not None and game.game_id == selected
+        if i % columns == 0:
+            cols = st.columns(columns)
         with cols[i % columns]:
             with st.container(border=True, key=f"{'gamecardsel' if chosen else 'gamecard'}_{key}_{game.game_id}"):
                 st.markdown(_card_html(game, records), unsafe_allow_html=True)
@@ -195,9 +214,10 @@ def bracket(table: pd.DataFrame) -> None:
     heads = [f'<div class="bk-h"><b>West</b>{n}</div>' for n in names]
     heads.append('<div class="bk-h final"><b>NBA Finals</b>Champion</div>')
     heads += [f'<div class="bk-h"><b>East</b>{n}</div>' for n in reversed(names)]
-    cols = [f'<div class="bk-col">{c}</div>' for c in west]
-    cols.append(f'<div class="bk-col final">{finals}<div class="bk-trophy">🏆</div>'
+    lab = '<div class="bk-lab">{}</div>'
+    cols = [f'<div class="bk-col">{lab.format("West · " + n)}{c}</div>' for n, c in zip(names, west)]
+    cols.append(f'<div class="bk-col final">{lab.format("NBA Finals")}{finals}<div class="bk-trophy">🏆</div>'
                 f'<div class="bk-title">{champion.team} · {100 * champion.p_champion:.0f}% to win it all</div></div>')
-    cols += [f'<div class="bk-col">{c}</div>' for c in reversed(east)]
+    cols += [f'<div class="bk-col">{lab.format("East · " + n)}{c}</div>' for n, c in zip(reversed(names), reversed(east))]
     st.markdown(f'<div class="bk-wrap"><div class="bk-heads">{"".join(heads)}</div><div class="bk">{"".join(cols)}</div></div>',
                 unsafe_allow_html=True)

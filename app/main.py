@@ -9,7 +9,7 @@ import streamlit as st
 
 import common
 
-st.set_page_config(page_title="NBA Match Predictor", page_icon=":basketball:", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="NBA Match Predictor", page_icon=":basketball:", layout="wide", initial_sidebar_state="auto")
 common.apply_theme()
 
 navigation = st.navigation(
