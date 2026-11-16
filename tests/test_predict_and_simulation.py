@@ -209,3 +209,16 @@ def test_simulation_inputs_from_the_predictor(predictor):
     assert (played + np.bincount(np.concatenate([inputs.fixture_home, inputs.fixture_away]), minlength=12) + inputs.unscheduled == 82).all()
     result = simulate_season(inputs, 200, seed=1, k_factor=k_factor, simulate_playoffs=False)  # 6 teams per conference
     assert result.table["mean_wins"].between(0, 82).all()
+
+
+def test_upcoming_carries_card_information(predictor):
+    upcoming = predictor.upcoming(days=None)
+    assert set(upcoming["confidence_level"]) <= {"low", "medium", "high"}
+    assert set(upcoming["volatility_level"]) <= {"low", "medium", "high"}
+    assert upcoming["confidence_score"].between(0, 100).all() and upcoming["volatility_score"].between(0, 100).all()
+    assert upcoming["tipoff_utc"].notna().all()
+    first = upcoming.iloc[0]
+    single = predictor.predict_matchup(first["home_team"], first["away_team"],
+                                       fixture_row=predictor.features.matchups.set_index("game_id", drop=False).loc[first["game_id"]])
+    assert single.confidence["score"] == first["confidence_score"]
+    assert single.volatility["score"] == first["volatility_score"]

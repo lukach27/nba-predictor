@@ -216,10 +216,11 @@ the dashboard add up to the forecast.
 
 | Page | Content |
 |---|---|
-| **Matchups** | Upcoming games, custom matchups (teams, date, neutral site), win probability, model comparison, Elo gap, confidence and volatility, SHAP explanation, team comparison, tactical analysis, what-if Elo adjustment |
+| **Tonight** | One-screen summary: the next slate as game cards, game of the night, safest pick, upset watch, live record, title race, playoff bubble |
+| **Matchups** | Upcoming games as cards, custom matchups (teams, date, neutral site), win probability, model comparison, Elo gap, confidence and volatility, SHAP explanation, team comparison, tactical analysis, what-if Elo adjustment |
 | **Team analytics** | Elo trajectories, league Elo heat map (optional 3D surface), rolling offensive and defensive rating, Four Factors percentiles, recent games, home/road splits |
 | **Explainability** | Global SHAP importance and summary, dependence plots, single-game explanations, ablation results |
-| **Season simulator** | Projected standings, playoff / title odds, finishing-position heat map, one team's win distribution, highest-leverage games; configurable simulations and seed |
+| **Season simulator** | Projected playoff bracket, projected standings, playoff / title odds, finishing-position heat map, one team's win distribution, highest-leverage games; configurable simulations and seed |
 | **Model performance** | Hold-out metrics against baselines with intervals, calibration curve, rolling accuracy and Brier, per-season results, live ledger |
 
 Streamlit was kept instead of moving to React + FastAPI: the dashboard calls the same Python

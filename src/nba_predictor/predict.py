@@ -196,7 +196,22 @@ class Predictor:
             rows = rows[rows["game_date"] <= start + pd.Timedelta(days=days - 1)]
         if rows.empty:
             return pd.DataFrame()
-        return self.score(rows).sort_values(["game_date", "game_id"]).reset_index(drop=True)
+        scored = self.score(rows)
+        levels = []
+        for (_, s), (_, row) in zip(scored.iterrows(), rows.iterrows()):
+            inputs = UncertaintyInputs(
+                p_home=float(s["p_ensemble"]), p_lr=float(s["p_lr"]), p_xgb=float(s["p_xgb"]), p_std=float(s["p_std"]),
+                min_games_played=float(min(row["home_games_played"], row["away_games_played"])),
+                mean_fg3a_rate=float(np.nanmean([row["home_fg3a_rate"], row["away_fg3a_rate"]])),
+                league_fg3a_rate=self.league_fg3a_rate,
+                schedule_stress=bool(row["home_b2b"] or row["away_b2b"] or row["home_three_in_four"] or row["away_three_in_four"]),
+            )
+            conf, vol = confidence(inputs), volatility(inputs)
+            levels.append((conf["level"], conf["score"], vol["level"], vol["score"]))
+        scored[["confidence_level", "confidence_score", "volatility_level", "volatility_score"]] = levels
+        tipoff = {} if self.schedule is None else dict(zip(self.schedule["game_id"], self.schedule["game_time_utc"]))
+        scored["tipoff_utc"] = scored["game_id"].map(tipoff)
+        return scored.sort_values(["game_date", "game_id"]).reset_index(drop=True)
 
     # --------------------------------------------------------------- one matchup
     def _facts(self, row: pd.Series, side: str) -> dict:

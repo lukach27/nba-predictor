@@ -93,6 +93,11 @@ def apply_theme() -> None:
     )
 
 
+    import components
+
+    components.inject_css()
+
+
 def page_header(title: str, subtitle: str, kicker: str = "NBA Match Predictor") -> None:
     st.markdown(f'<div class="nba-kicker">{kicker}</div>', unsafe_allow_html=True)
     st.title(title)

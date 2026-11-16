@@ -9,6 +9,7 @@ import streamlit as st
 
 import charts
 import common
+import components
 from nba_predictor.config import LLMConfig
 from nba_predictor.llm_model import build_fact_sheet, standardised_edges
 
@@ -24,38 +25,20 @@ if upcoming.empty:
 else:
     st.subheader("Upcoming games")
     days = sorted(upcoming["game_date"].dt.date.unique())
-    day = st.pills("Game day", days, default=days[0], format_func=lambda d: f"{d:%a %d %b}", label_visibility="collapsed")
-    day = day or days[0]
+    wanted = st.session_state.get("selected_game")
+    preset = upcoming.loc[upcoming["game_id"] == wanted, "game_date"]
+    first_day = preset.iloc[0].date() if len(preset) else days[0]
+    day = st.pills("Game day", days, default=first_day, format_func=lambda d: f"{d:%a %d %b}", label_visibility="collapsed") or first_day
     slate = upcoming[upcoming["game_date"].dt.date == day].reset_index(drop=True)
-    pick_home = slate["p_ensemble"] >= 0.5
-    table = pd.DataFrame(
-        {
-            "Matchup": slate["away_team"] + " @ " + slate["home_team"],
-            "Home win": 100 * slate["p_ensemble"],
-            "Model pick": slate["home_team"].where(pick_home, slate["away_team"]),
-            "Pick prob.": (100 * slate["p_ensemble"].where(pick_home, 1 - slate["p_ensemble"])).round(0),
-            "Exp. margin (home)": slate["expected_margin"].round(1),
-            "Elo gap": slate["elo_diff"].round(0),
-            "Logistic": (100 * slate["p_lr"]).round(0),
-            "XGBoost": (100 * slate["p_xgb"]).round(0),
-            "Elo only": (100 * slate["p_elo"]).round(0),
-        }
-    )
-    event = st.dataframe(
-        table, hide_index=True, width="stretch", on_select="rerun", selection_mode="single-row", key=f"slate_{day}",
-        column_config={
-            "Home win": st.column_config.ProgressColumn("Home win", format="%.0f%%", min_value=0, max_value=100),
-            "Pick prob.": st.column_config.NumberColumn(format="%.0f%%"),
-            "Exp. margin (home)": st.column_config.NumberColumn(format="%+.1f", help="Predicted home points minus away points."),
-            "Elo gap": st.column_config.NumberColumn(format="%+.0f", help="Home Elo minus away Elo, before home-court advantage."),
-            "Logistic": st.column_config.NumberColumn(format="%.0f%%", help="Home win probability, logistic regression."),
-            "XGBoost": st.column_config.NumberColumn(format="%.0f%%", help="Home win probability, XGBoost."),
-            "Elo only": st.column_config.NumberColumn(format="%.0f%%", help="Home win probability from Elo ratings alone."),
-        },
-    )
-    common.note("Select a row to analyse that game. Probabilities refer to the home team.")
-    chosen = event.selection.rows[0] if event.selection.rows else 0
-    selected_fixture = slate.iloc[chosen]
+    if wanted not in set(slate["game_id"]):
+        wanted = slate.loc[0, "game_id"]
+    records = {r.team_abbr: f"{r.wins}-{r.losses}" for r in common.snapshot(version).itertuples()}
+    clicked = components.game_cards(slate, records, key="slate", selected=wanted)
+    if clicked:
+        st.session_state["selected_game"] = clicked
+        st.rerun()
+    common.note("Pick a game to analyse it below. Blue is the home team, orange the away team; tip-off in Central European time.")
+    selected_fixture = slate[slate["game_id"] == wanted].iloc[0]
 
 # ------------------------------------------------------------------ choose matchup
 st.subheader("Matchup analysis")

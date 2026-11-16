@@ -14,7 +14,8 @@ common.apply_theme()
 
 navigation = st.navigation(
     [
-        st.Page("views/matchups.py", title="Matchups", icon=":material/sports_basketball:", default=True),
+        st.Page("views/tonight.py", title="Tonight", icon=":material/bolt:", default=True),
+        st.Page("views/matchups.py", title="Matchups", icon=":material/sports_basketball:"),
         st.Page("views/teams.py", title="Team analytics", icon=":material/monitoring:"),
         st.Page("views/explain.py", title="Explainability", icon=":material/account_tree:"),
         st.Page("views/simulator.py", title="Season simulator", icon=":material/casino:"),

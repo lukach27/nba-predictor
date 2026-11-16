@@ -7,6 +7,7 @@ import streamlit as st
 
 import charts
 import common
+import components
 
 predictor = common.predictor()
 version = common.data_version()
@@ -29,7 +30,13 @@ m1.metric("Title favourite", f"{favourite['team']} {common.pct(favourite['p_cham
 m2.metric("Scheduled games left", f"{remaining:,}")
 m3.metric("Games not yet scheduled", f"{unscheduled}", help="The NBA sets two games per team after the Cup group stage. "
           "Until then they are simulated against a league-average opponent on a neutral floor.")
-m4.metric("Simulations", f"{result.n_sims:,}", f"seed {result.seed}", delta_color="off")
+m4.metric("Simulations", f"{result.n_sims:,}", f"seed {result.seed}", delta_color="off", delta_arrow="off")
+
+st.subheader("Projected playoff bracket")
+components.bracket(table)
+common.note("Seeds follow the projected standings (seeds 7 and 8 are the likeliest play-in survivors) and the likelier team "
+            "advances in each box. Each percentage is that team's chance of winning that round, counted over all simulated "
+            "seasons. Hover a team for its full odds.")
 
 st.subheader("Projected standings")
 tabs = st.tabs(["East", "West"])
