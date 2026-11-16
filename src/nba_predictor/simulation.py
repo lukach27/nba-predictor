@@ -57,7 +57,7 @@ class SimulationInputs:
     unscheduled: np.ndarray | None = None  # games per team not yet on the schedule
     pair_logit: np.ndarray | None = None  # Z[h, a]: log-odds that h beats a at home
 
-    def validate(self) -> None:
+    def validate(self, playoffs: bool = True) -> None:
         n = len(self.team_ids)
         if len(self.team_abbr) != n or len(self.conference) != n or len(self.wins) != n or len(self.losses) != n:
             raise SimulationError("team arrays must all have the same length")
@@ -70,7 +70,7 @@ class SimulationInputs:
         if self.pair_logit is not None and np.asarray(self.pair_logit).shape != (n, n):
             raise SimulationError("pair_logit must be a square matrix over teams")
         for conf in np.unique(self.conference):
-            if (self.conference == conf).sum() < PLAYIN_LAST_SEED and self.pair_logit is not None:
+            if playoffs and self.pair_logit is not None and (self.conference == conf).sum() < PLAYIN_LAST_SEED:
                 raise SimulationError(f"conference {conf} needs at least {PLAYIN_LAST_SEED} teams for the playoffs")
 
 
@@ -142,7 +142,7 @@ def _order_by_strength(a: np.ndarray, b: np.ndarray, score: np.ndarray) -> tuple
 def simulate_season(inputs: SimulationInputs, n_sims: int = 10_000, seed: int = config.RANDOM_SEED,
                     hot: bool = True, k_factor: float = 20.0, simulate_playoffs: bool = True) -> SimulationResult:
     """Simulate the remaining season ``n_sims`` times. Deterministic for a given ``seed``."""
-    inputs.validate()
+    inputs.validate(playoffs=simulate_playoffs)
     if n_sims < 1:
         raise SimulationError("n_sims must be at least 1")
     rng = np.random.default_rng(seed)

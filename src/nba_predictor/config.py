@@ -153,19 +153,28 @@ class TrainingConfig:
 # ----------------------------------------------------------------------------- LLM
 @dataclass(frozen=True)
 class LLMConfig:
-    """Settings of the optional LLM analyst. The key itself only ever comes from the environment."""
+    """Settings of the optional LLM analyst.
+
+    Credentials are never stored here: the Anthropic SDK resolves them from the environment
+    (``ANTHROPIC_API_KEY`` / ``ANTHROPIC_AUTH_TOKEN``, e.g. via a local ``.env`` file) or from
+    an ``ant auth login`` profile.
+    """
 
     enabled: bool = os.environ.get("NBA_LLM_ENABLED", "1").lower() not in ("0", "false", "no")
-    model: str = os.environ.get("NBA_LLM_MODEL", "claude-sonnet-5-5")
-    max_tokens: int = int(os.environ.get("NBA_LLM_MAX_TOKENS", "2500"))
-    timeout_seconds: float = float(os.environ.get("NBA_LLM_TIMEOUT", "60"))
-    max_retries: int = 2
-    api_key_env: str = "ANTHROPIC_API_KEY"
+    model: str = os.environ.get("NBA_LLM_MODEL", "claude-opus-5-5")
+    effort: str = os.environ.get("NBA_LLM_EFFORT", "medium")
+    max_tokens: int = int(os.environ.get("NBA_LLM_MAX_TOKENS", "16000"))
+    timeout_seconds: float = float(os.environ.get("NBA_LLM_TIMEOUT", "120"))
+    max_attempts: int = 2  # one retry when the first answer fails the grounding checks
 
-    def api_key(self) -> str | None:
-        """Return the API key from the environment, or ``None`` when it is not configured."""
-        key = os.environ.get(self.api_key_env, "").strip()
-        return key or None
+    @staticmethod
+    def credentials_hint() -> str:
+        """Which credential source is visible in the environment (never the value itself)."""
+        if os.environ.get("ANTHROPIC_API_KEY", "").strip():
+            return "ANTHROPIC_API_KEY"
+        if os.environ.get("ANTHROPIC_AUTH_TOKEN", "").strip():
+            return "ANTHROPIC_AUTH_TOKEN"
+        return "none in environment"
 
 
 def season_label(start_year: int) -> str:

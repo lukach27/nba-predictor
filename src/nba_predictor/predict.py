@@ -130,6 +130,14 @@ class Predictor:
         return float(season["FG3A"].sum() / season["FGA"].sum())
 
     @cached_property
+    def league_pace(self) -> float:
+        """Average estimated pace (possessions per 48 minutes) in the current season."""
+        from .box_metrics import add_game_metrics
+
+        season = self.games[(self.games["season"] == self.current_season) & self.games["is_home"]]
+        return float(add_game_metrics(season)["pace"].mean())
+
+    @cached_property
     def fixtures(self) -> pd.DataFrame:
         """Scheduled regular-season games that have not been played."""
         return upcoming_fixtures(self.schedule, self.games)
@@ -269,7 +277,7 @@ class Predictor:
                 "elo_diff": _clean(row["elo_diff"]), "home_court_elo": self.bundle.elo_params.home_advantage,
                 "h2h_margin": _clean(row["h2h_margin"]), "h2h_games": _clean(row["h2h_games"]),
                 "expected_pace": _clean(row["expected_pace"]), "league_home_win_pct": _clean(row["league_home_win_pct"]),
-                "rest_diff": _clean(row["rest_diff"]),
+                "rest_diff": _clean(row["rest_diff"]), "league_pace": self.league_pace,
             },
             features={c: _clean(row[c]) for c in self.bundle.feature_columns},
             contributions=contributions.to_dict("records"),

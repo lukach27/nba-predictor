@@ -79,7 +79,9 @@ def make_lr(c: float) -> Pipeline:
     """Median imputation -> standardisation -> L2 logistic regression."""
     return Pipeline(
         [
-            ("impute", SimpleImputer(strategy="median")),
+            # keep_empty_features: a column with no data yet stays in place (as zeros) so the
+            # feature order - and therefore every explanation - always matches the bundle.
+            ("impute", SimpleImputer(strategy="median", keep_empty_features=True)),
             ("scale", StandardScaler()),
             ("clf", LogisticRegression(C=c, max_iter=2000)),
         ]
