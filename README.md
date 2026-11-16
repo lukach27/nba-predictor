@@ -1,161 +1,257 @@
-NBA MATCH PREDICTOR - PROJECT LOG / README
-============================================
+# NBA Match Predictor
 
-CILJ PROJEKTA
--------------
-Predviđanje pobjednika NBA utakmica (domaćin vs gost) koristeći
-javno dostupne statistike (nba_api) i klasične ML modele
-(Logistic Regression, XGBoost). Fokus je na razumljivom,
-korak-po-korak pipelineu i mjerljivom poboljšanju kroz iteracije,
-ne na "crnoj kutiji".
+Calibrated pre-game win probabilities for NBA games, built from public team box scores
+(`nba_api`). The project contains a leak-free feature pipeline, an improved Elo system, a
+logistic regression + XGBoost ensemble with probability calibration, exact SHAP explanations,
+a Monte Carlo season simulator, a fact-checked tactical analyst (LLM or rule-based) and a
+Streamlit dashboard.
 
+The original version of this project (a learning log in Croatian) is kept in
+[docs/original_project_log_hr.md](docs/original_project_log_hr.md) and in the first git commit.
 
-ARHITEKTURA / TOK PODATAKA
----------------------------
-1. data_collection.py
-   - Dohvaća sirove podatke o utakmicama s NBA API-ja (nba_api,
-     endpoint leaguegamefinder) za sezone 2019-20 do 2024-25.
-   - Sprema kao data/raw/games_raw.csv
-   - Napomena: svaki GAME_ID ima 2 reda (jedan po timu). Filtrirano
-     je da se izbace preseason/all-star utakmice (GAME_ID prefiks
-     mora biti '002' = regular season).
+## Results
 
-2. prepare_features.py (feature engineering)
-   - Učitava sirovi CSV, filtrira regular season.
-   - Sortira po TEAM_ID + GAME_DATE (nužno za ispravan rolling).
-   - Računa rolling prosjek zadnjih 5 utakmica po timu za:
-     PTS, FG_PCT, REB, TOV, AST (koristi .shift(1) da izbjegne
-     data leakage - ne smije uključivati statistiku same te utakmice).
-   - Računa days_rest (dani odmora od prošle utakmice), capano na
-     max 14 dana da izbjegne ekstremne vrijednosti na granici sezona.
-   - Računa venue-specific rolling (forma tima ODVOJENO kad igra
-     doma vs kad igra vani) - grupirano po (TEAM_ID, is_home).
-   - Računa H2H (head-to-head) statistiku: prosjek razlike u
-     poenima i home win rate iz zadnja 3 međusobna susreta tog
-     para timova (matchup_key = sortirani spoj oba TEAM_ID-a, da
-     je isti bez obzira tko je doma).
-   - Računa ELO RATING sustav (K=20): kumulativni rejting snage
-     tima koji se ažurira nakon svake utakmice na temelju ishoda
-     i očekivanja (jača pobjeda protiv boljeg tima = veći skok
-     rejtinga). Elo se računa kronološki, red po red, jer svaki
-     rejting ovisi o prethodnom stanju.
-   - Računa elo_trend (promjena Elo-a u zadnjih 10 utakmica tima,
-     doma+vani zajedno preko "dugog formata") i is_back_to_back
-     (flag za <=1 dan odmora) - izračunati i spremljeni u CSV, ali
-     izbačeni iz X seta za model (vidi "Testirano i odbačeno").
-   - Računa _diff kolone (home - away) za sve gornje statistike -
-     olakšava modelu (pogotovo linearnom) da vidi relativnu
-     razliku bez da je sam mora "izračunati".
-   - Spaja home/away perspektivu svake utakmice u jedan red
-     (merge po GAME_ID, suffixes=('_home', '_away')).
-   - Izbacuje redove s NaN (prve utakmice svakog tima/para koje
-     nemaju dovoljno povijesti za rolling prozore).
-   - Sprema kao data/processed/games_merged.csv
+All modelling decisions were made on seasons 2015-16 to 2024-25 with walk-forward validation.
+The model was then frozen and scored **once** on seasons it had never seen: 2025-26 and
+2026-27 to date (1,421 regular-season games).
 
-3. train_model.py (modeliranje)
-   - Cilj (y): home_win (1 ako je domaćin pobijedio, 0 inače).
-   - Featurei (X): SAMO kolone koje su poznate PRIJE utakmice
-     (rolling_5_*, days_rest, *_diff, elo_home/away/diff, h2h_*)
-     - NIKAD sirovi rezultat te utakmice (PTS_home, WL, itd.) jer
-     bi to bio data leakage.
-   - Split: VREMENSKI (sortirano po datumu, prvih 70% train,
-     sljedećih 10% validation, zadnjih 20% test) - NE nasumičan,
-     jer model mora predviđati budućnost, ne nasumične utakmice
-     iz cijele povijesti.
-   - Modeli: XGBoost (XGBClassifier) i Logistic Regression, oba s
-     random_state=42 radi reproducibilnosti rezultata.
-     Logistic Regression treba StandardScaler (skaliranje featurea)
-     jer su featurei na različitim skalama (FG_PCT ~0.45 vs
-     PTS ~110) - bez skaliranja ne konvergira ispravno.
-   - Hiperparameter tuning: GridSearchCV s TimeSeriesSplit(5) (ne
-     standardni CV, jer bi nasumično miješao vremenski redoslijed).
-     Scoring = neg_brier_score (optimizira kalibraciju, ne samo
-     pogotke). Grid: n_estimators [200,300,500], max_depth [2,3,4],
-     learning_rate [0.005,0.01,0.05]. Najbolji: n_estimators=300,
-     max_depth=2, learning_rate=0.01.
-   - Evaluacija: accuracy, Brier score (mjeri kalibraciju
-     vjerojatnosti, ne samo pogotke), usporedba s naivnim
-     baseline-om ("uvijek predvidi home win").
+| Model | Accuracy | Log loss | Brier | ROC-AUC | Calibration error |
+|---|---|---|---|---|---|
+| **Ensemble (calibrated)** | 68.6% | **0.5959** | **0.2046** | 0.741 | 2.6 pts |
+| XGBoost alone | 68.1% | 0.5988 | 0.2059 | 0.738 | 3.1 pts |
+| Elo only (improved, tuned) | 68.6% | 0.5975 | 0.2053 | 0.742 | 3.1 pts |
+| Original project's Elo | 67.6% | 0.6104 | 0.2109 | 0.722 | 2.5 pts |
+| Always the home-win rate | 55.0% | 0.6887 | 0.2478 | 0.500 | 1.6 pts |
 
+Accuracy has a 95% interval of roughly ±2.4 points on this sample (ensemble: 66.1-71.0%).
 
-REZULTATI KROZ ITERACIJE
---------------------------
-Verzija                          | XGB Acc | XGB Brier | LogReg Acc | LogReg Brier
-----------------------------------|---------|-----------|------------|-------------
-Baseline (samo rolling_5)         | 0.595   | 0.236     | 0.604      | 0.233
-+ days_rest                       | 0.605   | 0.234     | -          | -
-+ diff kolone                     | 0.600   | 0.235     | 0.617      | 0.231
-+ venue-specific rolling          | 0.606   | 0.230     | 0.622      | 0.229
-+ head-to-head (H2H)              | 0.627   | 0.230     | 0.622      | 0.227 (skalirano)
-+ ELO RATING                      | 0.656   | 0.215     | 0.659      | 0.214
-+ hiperparameter tuning (FINALNO) | 0.662   | 0.215     | 0.660      | 0.214
+What these numbers do and do not show:
 
-Naivni baseline (uvijek "home win"): ~0.541-0.546 accuracy.
+- **The improved Elo is the real gain.** Against the original Elo (K=20, nothing else) it
+  lowers log loss by 0.013, and the 95% paired-bootstrap interval (0.007 to 0.018) excludes zero.
+- **The extra features add a small edge on top of Elo.** In walk-forward validation
+  (6,966 games) the ensemble beats pure Elo by 0.0047 log loss, interval 0.0021 to 0.0070.
+  On the hold-out the difference is 0.0016 with an interval of -0.0080 to +0.0046, which is
+  not statistically distinguishable at this sample size.
+- **XGBoost does not beat logistic regression here.** The ensemble weight chosen by validation
+  is 0% XGBoost, so the deployed ensemble equals the calibrated logistic regression. Both models
+  are still trained, compared and shown; their disagreement feeds the uncertainty indicators.
+- **Test-season accuracy is higher than validation accuracy (68.6% vs 65.2%)** because the
+  2025-26 season was more lopsided, not because the model improved. Compare models on the same
+  games, not across seasons.
+- **Point margin model** (XGBoost regression, same features): mean absolute error 11.4 points
+  on the hold-out, the same as a one-variable Elo regression.
 
-Napomena: raniji rezultat od 0.668 (prije uvođenja random_state)
-nije reproduciran nakon fiksiranja seeda - vjerojatno je bio
-sretan slučajni rezultat, ne stvarno bolja konfiguracija. 0.662
-je pouzdana, reproducibilna finalna brojka.
+Without injury, lineup or betting-market data, team-level models top out around 65-69%.
 
+## Quick start
 
-KLJUČNI NALAZI
-----------------
-- ELO RATING je ubjedljivo najjači pojedinačni feature (importance
-  ~0.20-0.21, gotovo 4x veći od sljedećeg najboljeg) - kumulativni
-  rejting kroz cijelu povijest nosi jači signal od bilo koje
-  statistike zadnjih 5 utakmica.
-- FG_PCT_diff (razlika u efikasnosti šuta) je bio dosljedno najjači
-  "obični" feature prije uvođenja Elo-a - jači prediktor od sirovih
-  poena ili rebound razlika.
-- Više featurea NE znači automatski bolji model - XGBoost je
-  ponekad blago padao s dodavanjem featurea (npr. diff kolone) dok
-  je Logistic Regression od njih profitirao. Svaki dodatak je
-  testiran i zadržan/odbačen na temelju mjerenih rezultata, ne
-  pretpostavke.
-- Data leakage je stalna opasnost u pipelineu ovog tipa - sprječen
-  s .shift(1) prije svakog rolling izračuna i strogim pravilom da
-  X nikad ne smije sadržavati "rezultat" utakmice koja se predviđa.
-  Fiksni random_state je bitan za pouzdanu usporedbu iteracija -
-  bez njega, XGBoost varijanca (~0.005-0.01 accuracy) lako se
-  zamijeni za stvarno poboljšanje/pogoršanje.
-- S max_depth=2 (odabran GridSearch-om), dominacija elo_diff
-  featurea gura importance nekih drugih kolona (REB_home, TOV_diff,
-  AST_diff, H2H statistike) na točno 0.0 - plitka stabla nemaju
-  "mjesta" za manje-informativne featurese kad postoji jedan jako
-  dominantan. Ne znači da su ti featurei beskorisni sami za sebe,
-  samo da ih ovaj konkretan model ne koristi.
+Python 3.11+ (built and tested on 3.13, Windows).
 
+```bash
+python -m venv .venv
+.venv\Scripts\activate            # macOS/Linux: source .venv/bin/activate
+pip install -r requirements.txt
+pip install -e .
 
-TESTIRANO I ODBAČENO
------------------------
-- elo_trend (promjena Elo-a u zadnjih 10 utakmica, doma+vani
-  zajedno): nakon ispravke bug-a u X filteru i dodavanja fiksnog
-  seeda, nije poboljšao metrike (0.662 s vs bez, praktički
-  identično) - vjerojatno duplicira signal koji trenutni elo_diff
-  već nosi. Izračun zadržan u CSV-u za potencijalni prikaz "tim u
-  usponu" na dashboardu, ali izbačen iz X seta za model.
-- is_back_to_back (binarni flag za <=1 dan odmora): nije pokazao
-  dodatnu vrijednost preko postojećeg kontinuiranog days_rest -
-  vjerojatno prekratak/rijedak signal da ga plitka XGBoost stabla
-  (max_depth=2) uhvate. Izbačen iz X seta.
+python -m nba_predictor fetch      # downloads 2014-15 to today (about 1 minute)
+python -m nba_predictor train      # full training and evaluation protocol (about 2 minutes)
+streamlit run app/main.py          # dashboard at http://localhost:8501
+python -m pytest                   # 88 tests
+```
 
+The repository already contains downloaded data (`data/raw/`) and a trained model (`models/`),
+so the dashboard and the tests work right after installation.
 
-POZNATA OGRANIČENJA / IDEJE ZA DALJE
----------------------------------------
-- Nema podataka o ozljedama/izostancima ključnih igrača (nba_api
-  nema čist endpoint za to) - potencijalno najveći preostali izvor
-  greške u modelu.
-- H2H statistika ima relativno malen uzorak po paru timova (2-4
-  susreta godišnje) - signal je slabiji nego kod ostalih featurea.
-- Realan strop za NBA predikciju je otprilike 65-70% accuracy zbog
-  inherentne slučajnosti sporta - čak i profesionalni modeli s puno
-  bogatijim podacima rijetko prelaze tu granicu. 0.662 je solidan
-  rezultat unutar tog realnog okvira.
-- Sljedeći koraci: LLM tactical agent sloj (generira tekstualni
-  "pre-match breakdown" iz model outputa), interaktivni dashboard
-  (Streamlit) za pregled utakmica i vizualizaciju forme timova.
+### Commands
 
-Ključni nalazi": "Ispravka H2H logike (perspektivno okretanje predznaka kad se domaćinstvo mijenja između susreta) podigla je accuracy s 0.662 na 0.667 i pretvorila H2H featurese iz potpuno neaktivnih (importance 0.0) u top-10 najvažnije — pokazatelj da je bug u feature engineeringu, ne nedostatak signala, bio uzrok ranije niske korisnosti.
+| Command | What it does |
+|---|---|
+| `python -m nba_predictor fetch [--full]` | Download game logs and the current schedule from the NBA stats API |
+| `python -m nba_predictor train` | Tune Elo, select features, tune models, calibrate, evaluate, save artefacts |
+| `python -m nba_predictor update` | Daily routine: fetch, rebuild features, log forecasts for the next two days, grade old ones |
+| `python -m nba_predictor upcoming --days 3` | Forecasts for scheduled games |
+| `python -m nba_predictor predict BOS LAL [--date YYYY-MM-DD] [--neutral] [--json]` | One matchup (home team first) |
+| `python -m nba_predictor analyze BOS LAL [--no-llm]` | Structured tactical analysis as JSON |
+| `python -m nba_predictor simulate --sims 10000 --seed 42 [--static]` | Season simulation |
 
-STATUS: FEATURE ENGINEERING I MODEL - ZAVRŠENO (za sad)
-Sljedeća faza: LLM Tactical Agent
+Add `-v` before the command for progress logs.
+
+### Optional: the LLM analyst
+
+The tactical analysis works without any key (a deterministic rule-based analyst fills the same
+JSON schema). To have Claude write it instead:
+
+1. Copy `.env.example` to `.env`.
+2. Put your Anthropic API key after `ANTHROPIC_API_KEY=`. API usage is billed separately from
+   a Claude subscription.
+3. In the dashboard, open a matchup, go to **Tactical analysis** and switch on
+   **Write the analysis with Claude**.
+
+Settings: `NBA_LLM_MODEL` (default `claude-opus-5-5`), `NBA_LLM_EFFORT` (default `medium`),
+`NBA_LLM_ENABLED=0` to switch the LLM layer off entirely. `.env` is git-ignored.
+
+## Architecture
+
+```
+NBA stats API ──> data/raw/games_raw.csv, schedule.csv          data_collection.py
+                         │  clean_games(): one typed row per team per game
+                         ▼
+        box_metrics.py   Four Factors, possessions, off/def/net rating, pace (post-game)
+        elo.py           Elo with home court, margin of victory, season regression
+                         │
+                         ▼
+        features.py      build_features(games, fixtures) ──> pre-game features
+                         │        (the same function for training rows and for predictions)
+          ┌──────────────┴───────────────┐
+          ▼                              ▼
+   train_model.py                    predict.py ──> uncertainty.py, explain.py (SHAP)
+   models/model_bundle.joblib            │
+   models/metrics.json                   ├──> simulation.py   (Monte Carlo season + playoffs)
+   models/backtest_predictions.csv       ├──> llm_model.py    (fact-checked analyst)
+                                         ├──> ledger.py       (forecasts logged before tip-off)
+                                         └──> app/            (Streamlit dashboard)
+```
+
+| Module (`src/nba_predictor/`) | Responsibility |
+|---|---|
+| `config.py` | Paths, season boundaries, feature groups, model and LLM settings. No secrets. |
+| `data_collection.py` | Download with retries, schema validation, cleaning, neutral-site detection, fixtures |
+| `box_metrics.py` | Single-game Four Factors and possession-based ratings |
+| `elo.py` | Elo engine and parameter grid search |
+| `features.py` | The one feature pipeline (team history, rest, head-to-head, matchup differences) |
+| `metrics.py` | Accuracy, log loss, Brier, ROC-AUC, ECE, calibration tables, bootstrap intervals |
+| `modeling.py` | Model definitions, Platt calibration, walk-forward folds, `ModelBundle` save/load |
+| `train_model.py` | The training and evaluation protocol |
+| `explain.py` | Exact SHAP values for XGBoost, logistic regression and the ensemble |
+| `predict.py` | `Predictor`: scheduled games, arbitrary matchups, neutral sites, what-if adjustments |
+| `uncertainty.py` | Confidence level and volatility risk index |
+| `simulation.py` | Seeded Monte Carlo of the regular season, play-in and playoffs; game leverage |
+| `ledger.py` | Append-only log of forecasts made before tip-off, graded later |
+| `llm_model.py` | Fact sheet, JSON schema, grounding validator, Claude call, rule-based analyst |
+| `cli.py` | Command-line interface |
+
+`app/` holds the dashboard (`main.py`, `common.py` for theme and cached data access,
+`charts.py` for Plotly figures, `views/` for the five pages). `tests/` holds the test suite.
+
+## Data
+
+| File | Content | Source |
+|---|---|---|
+| `data/raw/games_raw.csv` | One row per team per game, 2014-15 onward, all game types. Same 28 columns as the original project (`SEASON_ID, TEAM_ID, ..., PLUS_MINUS`). | `LeagueGameFinder` |
+| `data/raw/schedule.csv` | Current season schedule: date, tip-off time (UTC), teams, status, neutral-site flag | `ScheduleLeagueV2` |
+| `data/processed/*.csv` | Regenerated feature tables (git-ignored) | `features.py` |
+| `data/predictions/ledger.csv` | Forecasts logged before tip-off | `ledger.py` |
+| `models/` | Model bundle, metrics, backtest predictions | `train_model.py` |
+
+Cleaning rules: NBA teams only; regular season, play-in, playoffs and Cup final (preseason and
+All-Star games are dropped); unfinished games are dropped; every game must be one home row and
+one away row. Neutral sites are the 2020 bubble (by date), games flagged neutral in the
+schedule, and games the API lists as `A @ B` on both rows (its convention since 2024-25).
+Earlier international games cannot be identified from the data and count as home games.
+
+## Features
+
+Every model input is a pre-game quantity. Team statistics are lagged with `shift(1)` inside
+each (team, season) before any averaging, early-season values are blended with a prior built
+from the previous season only, and Elo and head-to-head history are read before the game
+updates them.
+
+| Group | Inputs | Kept by ablation |
+|---|---|---|
+| `elo` | Elo rating gap | yes |
+| `form` | Recent net rating and win % (5-game half-life), Elo change over 10 games | yes |
+| `venue` | Home team's home-game form against the away team's road form | yes |
+| `rest` | Rest days per team, rest gap, back-to-back flags | yes (the only group significant on its own) |
+| `h2h` | Shrunk average margin of recent meetings (sign flips with home court) | yes (marginal) |
+| `efficiency` | Net rating, offensive rating, blended win % | no |
+| `four_factors` | eFG%, TOV%, ORB%, FT rate, and their defensive mirrors | no |
+| `schedule` | Games in the last 7 days, third game in four nights, road-trip length | no |
+| `context` | Trailing league home win rate, season progress | no (it made validation worse) |
+
+"No" means removing the group did not make walk-forward log loss worse, so it was dropped:
+with a margin-of-victory Elo in the model, season-long efficiency and the Four Factors carry
+no additional information about who wins. They are still computed, tested, shown in the
+dashboard and given to the analyst.
+
+**Observed vs estimated.** The Four Factors are exact ratios of box-score counts. Possessions
+(`FGA + 0.44 x FTA - OREB + TOV`, averaged over both teams), pace and offensive/defensive/net
+rating are estimates and are labelled as such everywhere.
+
+**Tuned Elo:** K = 16, home court = 60 points, 60% of the distance from 1500 carried between
+seasons, FiveThirtyEight margin-of-victory multiplier, playoffs included.
+
+## Training and evaluation protocol
+
+1. **Development seasons** (2015-16 to 2024-25; 2014-15 only warms up Elo and priors). With
+   walk-forward validation (validate on one season, train on all earlier ones) the pipeline
+   tunes Elo, runs the group ablation and backward elimination, tunes logistic regression and
+   XGBoost (40-configuration random search), picks the ensemble weight and fits Platt calibrators
+   on out-of-fold scores.
+2. **Hold-out seasons** (`config.TEST_SEASONS`) are scored once by the frozen model, next to
+   three baselines, with bootstrap intervals and paired comparisons.
+3. **Production model**: refitted on all seasons with the frozen settings, plus 15 bootstrap
+   replicas whose spread is the model-uncertainty band.
+
+The ensemble blends the two models' log-odds and applies one Platt calibration, which keeps
+the final forecast exactly additive in feature contributions. That is why the SHAP values in
+the dashboard add up to the forecast.
+
+## Dashboard
+
+| Page | Content |
+|---|---|
+| **Matchups** | Upcoming games, custom matchups (teams, date, neutral site), win probability, model comparison, Elo gap, confidence and volatility, SHAP explanation, team comparison, tactical analysis, what-if Elo adjustment |
+| **Team analytics** | Elo trajectories, league Elo heat map (optional 3D surface), rolling offensive and defensive rating, Four Factors percentiles, recent games, home/road splits |
+| **Explainability** | Global SHAP importance and summary, dependence plots, single-game explanations, ablation results |
+| **Season simulator** | Projected standings, playoff / title odds, finishing-position heat map, one team's win distribution, highest-leverage games; configurable simulations and seed |
+| **Model performance** | Hold-out metrics against baselines with intervals, calibration curve, rolling accuracy and Brier, per-season results, live ledger |
+
+Streamlit was kept instead of moving to React + FastAPI: the dashboard calls the same Python
+feature and model code directly, and a second language, a build chain and an API layer would
+add surface without adding analysis.
+
+## Season simulator
+
+Each remaining fixture is drawn from its calibrated ensemble probability. With "hot"
+simulation (default) a team's strength drifts inside each simulated season by the Elo update
+rule, which widens the range of final records to something realistic. Simplifications: ties
+are broken by conference record and then at random (not the official head-to-head rules);
+playoff games reuse regular-season probabilities; games the NBA has not scheduled yet
+(two per team until the Cup group stage ends) are played against a league-average opponent.
+
+## The tactical analyst
+
+`llm_model.py` builds a fact sheet of pre-rounded numbers from a prediction. The analyst (LLM
+or rule-based) may only return text and references to fact ids. A validator rejects the answer
+if it names a different favourite, cites an unknown metric, contains a number that is not on
+the fact sheet, or mentions injuries or lineups. Probabilities, confidence and volatility in
+the final JSON are copied from the statistical models. On any API error, refusal, malformed
+answer or repeated validation failure the rule-based analyst is used and the report says why.
+
+Known gap: the validator cannot recognise player names, so "do not name players" is enforced
+by the prompt only.
+
+## Tests
+
+`python -m pytest` runs 88 tests in about 25 seconds, offline, on a synthetic league plus the
+real artefacts when present. They cover: Four Factors and rating formulas; Elo (expected score,
+zero-sum updates, home court, margin, season regression); temporal shifts; **no future
+leakage** (changing a game's result must not change that game's or any earlier game's
+features); **training/inference parity** (a played game rebuilt as an unplayed fixture gets
+identical inputs, on synthetic and real data); missing data; walk-forward splits; calibration;
+model serialisation; SHAP additivity; simulator invariants and reproducibility; LLM schema,
+grounding and failure handling; the ledger; data cleaning.
+
+## Limitations
+
+- No injuries, lineups, trades, rest decisions or betting lines. This is the largest source of
+  error and the reason the what-if adjustment exists.
+- The hold-out is 1,421 games, so differences below roughly 0.006 log loss cannot be confirmed.
+- XGBoost adds nothing over logistic regression on these features.
+- The margin model is no better than a linear Elo fit.
+- Playoff simulation uses regular-season probabilities and simplified tie-breaks.
+- Neutral-site games before 2024-25 (other than the 2020 bubble) are treated as home games.
+- The live ledger only grows when `update` (or **Refresh data**) is run before games start.
+- The LLM analyst needs a paid API key and was tested here against simulated responses only,
+  not against the live API.
